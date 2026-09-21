@@ -6,8 +6,9 @@
   },
   {
     "job": "big_two_1of2",
-    "max_age_minutes": 180,
+    "max_age_minutes": 20,
     "max_runtime_minutes": 150,
+    "group": "big_landing_chain",
     "parameters": {
       "PROVIDER_SCOPE": "big_two_1of2",
       "FORM_SUITE": "all",
@@ -18,8 +19,9 @@
   },
   {
     "job": "big_two_2of2",
-    "max_age_minutes": 180,
+    "max_age_minutes": 20,
     "max_runtime_minutes": 150,
+    "group": "big_landing_chain",
     "parameters": {
       "PROVIDER_SCOPE": "big_two_2of2",
       "FORM_SUITE": "all",
@@ -30,8 +32,9 @@
   },
   {
     "job": "rtk_megafon",
-    "max_age_minutes": 180,
+    "max_age_minutes": 20,
     "max_runtime_minutes": 150,
+    "group": "big_landing_chain",
     "parameters": {
       "PROVIDER_SCOPE": "rtk_megafon",
       "FORM_SUITE": "all",
@@ -42,8 +45,9 @@
   },
   {
     "job": "small_pool",
-    "max_age_minutes": 180,
+    "max_age_minutes": 20,
     "max_runtime_minutes": 150,
+    "group": "big_landing_chain",
     "parameters": {
       "PROVIDER_SCOPE": "small_pool",
       "FORM_SUITE": "all",

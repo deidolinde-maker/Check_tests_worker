@@ -23,6 +23,7 @@ class Target:
     max_age_minutes: int
     max_runtime_minutes: int
     parameters: dict[str, str]
+    group: str | None
 
 
 def load_targets(path: str) -> list[Target]:
@@ -40,6 +41,7 @@ def load_targets(path: str) -> list[Target]:
                 max_age_minutes=int(item["max_age_minutes"]),
                 max_runtime_minutes=int(item["max_runtime_minutes"]),
                 parameters={str(key): str(value) for key, value in (item.get("parameters") or {}).items()},
+                group=str(item["group"]) if item.get("group") else None,
             )
         )
     return targets
@@ -110,6 +112,32 @@ def decide_action(job_data: dict[str, Any], now_ms: int, target: Target) -> str:
     return "trigger" if age_minutes > target.max_age_minutes else "healthy"
 
 
+def select_group_recovery_target(
+    targets: list[Target], data_by_job: dict[str, dict[str, Any]], now_ms: int
+) -> Target | None:
+    """Return one next-chain target only when the whole group is idle and stale."""
+    if any((data_by_job[target.job].get("lastBuild") or {}).get("building") for target in targets):
+        return None
+
+    completed = []
+    for index, target in enumerate(targets):
+        build = data_by_job[target.job].get("lastCompletedBuild") or {}
+        timestamp = build.get("timestamp")
+        if timestamp:
+            completed.append((int(timestamp), index))
+
+    if not completed:
+        return targets[0]
+
+    latest_timestamp, latest_index = max(completed)
+    max_age_minutes = min(target.max_age_minutes for target in targets)
+    age_minutes = max(0, now_ms - latest_timestamp) / 60_000
+    if age_minutes <= max_age_minutes:
+        return None
+
+    return targets[(latest_index + 1) % len(targets)]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--targets", default="targets.json")
@@ -125,22 +153,61 @@ def main() -> int:
 
     exit_code = 0
     now_ms = int(time.time() * 1000)
-    for target in load_targets(args.targets):
+    targets = load_targets(args.targets)
+    grouped: dict[str, list[Target]] = {}
+    for target in targets:
+        if target.group:
+            grouped.setdefault(target.group, []).append(target)
+
+    target_data: dict[str, dict[str, Any]] = {}
+    for target in targets:
         try:
-            data = request_json(api_url(base_url, target.job), username, token)
-            action = decide_action(data, now_ms, target)
-            print(f"[WATCHDOG] job={target.job} action={action}")
-            if action == "trigger":
-                if args.dry_run:
-                    print(f"[WATCHDOG] dry-run: would trigger {target.job}")
-                else:
-                    trigger_job(base_url, target.job, username, token, target.parameters)
-                    print(f"[WATCHDOG] triggered {target.job}")
-            elif action == "running-too-long":
-                print(f"[WATCHDOG] alert: {target.job} is running longer than allowed", file=sys.stderr)
+            target_data[target.job] = request_json(api_url(base_url, target.job), username, token)
         except Exception as error:
             exit_code = 1
             print(f"[WATCHDOG] failed for {target.job}: {error}", file=sys.stderr)
+
+    handled = set()
+    for group_name, group_targets in grouped.items():
+        if any(target.job not in target_data for target in group_targets):
+            continue
+        handled.update(target.job for target in group_targets)
+        running = [target.job for target in group_targets if (target_data[target.job].get("lastBuild") or {}).get("building")]
+        if running:
+            print(f"[WATCHDOG] group={group_name} healthy: active={', '.join(running)}")
+            continue
+        recovery_target = select_group_recovery_target(group_targets, target_data, now_ms)
+        if recovery_target is None:
+            print(f"[WATCHDOG] group={group_name} healthy: no active build, last completion is recent")
+            continue
+        print(f"[WATCHDOG] group={group_name} action=trigger job={recovery_target.job}")
+        if args.dry_run:
+            print(f"[WATCHDOG] dry-run: would trigger {recovery_target.job}")
+        else:
+            try:
+                trigger_job(base_url, recovery_target.job, username, token, recovery_target.parameters)
+                print(f"[WATCHDOG] triggered {recovery_target.job}")
+            except Exception as error:
+                exit_code = 1
+                print(f"[WATCHDOG] failed to trigger {recovery_target.job}: {error}", file=sys.stderr)
+
+    for target in targets:
+        if target.job in handled or target.job not in target_data:
+            continue
+        action = decide_action(target_data[target.job], now_ms, target)
+        print(f"[WATCHDOG] job={target.job} action={action}")
+        if action == "trigger":
+            if args.dry_run:
+                print(f"[WATCHDOG] dry-run: would trigger {target.job}")
+            else:
+                try:
+                    trigger_job(base_url, target.job, username, token, target.parameters)
+                    print(f"[WATCHDOG] triggered {target.job}")
+                except Exception as error:
+                    exit_code = 1
+                    print(f"[WATCHDOG] failed to trigger {target.job}: {error}", file=sys.stderr)
+        elif action == "running-too-long":
+            print(f"[WATCHDOG] alert: {target.job} is running longer than allowed", file=sys.stderr)
     return exit_code
 
 
