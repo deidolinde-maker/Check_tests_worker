@@ -15,4 +15,4 @@ This job monitors the continuous Jenkins jobs used by the landing tests and URL 
 
 The watchdog does not restart a running job. It triggers a new build only when there is no active build and the last completed build is older than the configured limit. A long-running build is reported in the watchdog console and is not forcibly aborted.
 
-For the four big-test jobs, the configured parameters enable the continuous loop and preserve each job's `PROVIDER_SCOPE` when the watchdog has to recover it.
+The four big-test jobs are treated as one exclusive chain. If any one of them is running, the watchdog starts none of them. If all four are idle, it starts only the first job, `big_two_1of2`, with the continuous loop enabled.

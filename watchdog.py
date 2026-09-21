@@ -115,27 +115,10 @@ def decide_action(job_data: dict[str, Any], now_ms: int, target: Target) -> str:
 def select_group_recovery_target(
     targets: list[Target], data_by_job: dict[str, dict[str, Any]], now_ms: int
 ) -> Target | None:
-    """Return one next-chain target only when the whole group is idle and stale."""
+    """Return only the first chain target when the whole group is idle."""
     if any((data_by_job[target.job].get("lastBuild") or {}).get("building") for target in targets):
         return None
-
-    completed = []
-    for index, target in enumerate(targets):
-        build = data_by_job[target.job].get("lastCompletedBuild") or {}
-        timestamp = build.get("timestamp")
-        if timestamp:
-            completed.append((int(timestamp), index))
-
-    if not completed:
-        return targets[0]
-
-    latest_timestamp, latest_index = max(completed)
-    max_age_minutes = min(target.max_age_minutes for target in targets)
-    age_minutes = max(0, now_ms - latest_timestamp) / 60_000
-    if age_minutes <= max_age_minutes:
-        return None
-
-    return targets[(latest_index + 1) % len(targets)]
+    return targets[0]
 
 
 def main() -> int:

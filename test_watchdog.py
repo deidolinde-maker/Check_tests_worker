@@ -35,7 +35,7 @@ class WatchdogDecisionTests(unittest.TestCase):
         }
         self.assertIsNone(select_group_recovery_target(targets, data, self.now))
 
-    def test_group_recovers_only_next_job(self):
+    def test_group_recovers_only_first_job(self):
         targets = [
             Target("one", 20, 30, {}, "chain"),
             Target("two", 20, 30, {}, "chain"),
@@ -44,7 +44,7 @@ class WatchdogDecisionTests(unittest.TestCase):
             "one": {"lastCompletedBuild": {"timestamp": self.now - 90 * 60_000}},
             "two": {"lastCompletedBuild": {"timestamp": self.now - 100 * 60_000}},
         }
-        self.assertEqual(select_group_recovery_target(targets, data, self.now).job, "two")
+        self.assertEqual(select_group_recovery_target(targets, data, self.now).job, "one")
 
 
 if __name__ == "__main__":
