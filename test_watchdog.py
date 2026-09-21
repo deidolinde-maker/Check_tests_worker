@@ -47,6 +47,17 @@ class WatchdogDecisionTests(unittest.TestCase):
         queued = {"one"}
         self.assertIsNone(select_group_recovery_target(targets, data, queued, "https://jenkins.example", self.now))
 
+    def test_group_with_job_in_queue_flag_does_not_start_another(self):
+        targets = [
+            Target("one", 20, 30, {}, "chain"),
+            Target("two", 20, 30, {}, "chain"),
+        ]
+        data = {
+            "one": {"inQueue": True, "lastCompletedBuild": {"timestamp": self.now - 90 * 60_000}},
+            "two": {"lastCompletedBuild": {"timestamp": self.now - 90 * 60_000}},
+        }
+        self.assertIsNone(select_group_recovery_target(targets, data, set(), "https://jenkins.example", self.now))
+
     def test_group_recovers_only_first_job(self):
         targets = [
             Target("one", 20, 30, {}, "chain"),

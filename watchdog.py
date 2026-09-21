@@ -52,7 +52,8 @@ def job_path(job_name: str) -> str:
 
 
 def api_url(base_url: str, job_name: str) -> str:
-    return f"{base_url.rstrip('/')}/{job_path(job_name)}/api/json"
+    fields = "inQueue,lastBuild[building,timestamp,number],lastCompletedBuild[timestamp,number]"
+    return f"{base_url.rstrip('/')}/{job_path(job_name)}/api/json?tree={fields}"
 
 
 def request_json(url: str, username: str, token: str) -> dict[str, Any]:
@@ -91,6 +92,12 @@ def queued_jobs(base_url: str, username: str, token: str) -> set[str]:
 
 def is_queued(job_name: str, queued: set[str], base_url: str) -> bool:
     return job_name in queued or f"{base_url.rstrip('/')}/{job_path(job_name)}" in queued
+
+
+def is_busy(job_name: str, data: dict[str, Any], queued: set[str], base_url: str) -> bool:
+    return bool((data.get("lastBuild") or {}).get("building")) or bool(data.get("inQueue")) or is_queued(
+        job_name, queued, base_url
+    )
 
 
 def trigger_job(
@@ -135,8 +142,7 @@ def select_group_recovery_target(
 ) -> Target | None:
     """Return only the first chain target when the whole group is idle."""
     if any(
-        (data_by_job[target.job].get("lastBuild") or {}).get("building")
-        or is_queued(target.job, queued, base_url)
+        is_busy(target.job, data_by_job[target.job], queued, base_url)
         for target in targets
     ):
         return None
@@ -174,6 +180,11 @@ def main() -> int:
     for target in targets:
         try:
             target_data[target.job] = request_json(api_url(base_url, target.job), username, token)
+            data = target_data[target.job]
+            print(
+                f"[WATCHDOG] state job={target.job} building="
+                f"{bool((data.get('lastBuild') or {}).get('building'))} inQueue={bool(data.get('inQueue'))}"
+            )
         except Exception as error:
             exit_code = 1
             print(f"[WATCHDOG] failed for {target.job}: {error}", file=sys.stderr)
@@ -196,6 +207,14 @@ def main() -> int:
             print(f"[WATCHDOG] dry-run: would trigger {recovery_target.job}")
         else:
             try:
+                latest_queue = queued_jobs(base_url, username, token)
+                latest_data = {
+                    target.job: request_json(api_url(base_url, target.job), username, token)
+                    for target in group_targets
+                }
+                if any(is_busy(target.job, latest_data[target.job], latest_queue, base_url) for target in group_targets):
+                    print(f"[WATCHDOG] group={group_name} trigger skipped: build became active or queued")
+                    continue
                 trigger_job(base_url, recovery_target.job, username, token, recovery_target.parameters)
                 print(f"[WATCHDOG] triggered {recovery_target.job}")
             except Exception as error:
@@ -205,7 +224,7 @@ def main() -> int:
     for target in targets:
         if target.job in handled or target.job not in target_data:
             continue
-        if is_queued(target.job, queued, base_url):
+        if is_busy(target.job, target_data[target.job], queued, base_url):
             print(f"[WATCHDOG] job={target.job} action=queued")
             continue
         action = decide_action(target_data[target.job], now_ms, target)
@@ -215,6 +234,11 @@ def main() -> int:
                 print(f"[WATCHDOG] dry-run: would trigger {target.job}")
             else:
                 try:
+                    latest_queue = queued_jobs(base_url, username, token)
+                    latest_data = request_json(api_url(base_url, target.job), username, token)
+                    if is_busy(target.job, latest_data, latest_queue, base_url):
+                        print(f"[WATCHDOG] job={target.job} trigger skipped: build became active or queued")
+                        continue
                     trigger_job(base_url, target.job, username, token, target.parameters)
                     print(f"[WATCHDOG] triggered {target.job}")
                 except Exception as error:
