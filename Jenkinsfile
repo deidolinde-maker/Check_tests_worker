@@ -8,7 +8,7 @@ pipeline {
     }
 
     triggers {
-        cron('TZ=Europe/Moscow\nH/10 * * * *\n0 6,12,18 * * *')
+        cron('TZ=Europe/Moscow\n0 6,12,18 * * *')
     }
 
     stages {
