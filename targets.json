@@ -5,20 +5,51 @@
     "max_runtime_minutes": 45
   },
   {
-    "job": "Big_landing_test",
+    "job": "big_two_1of2",
     "max_age_minutes": 180,
     "max_runtime_minutes": 150,
     "parameters": {
-      "PROVIDER_SCOPE": "release_chain",
+      "PROVIDER_SCOPE": "big_two_1of2",
       "FORM_SUITE": "all",
       "SERVICE_MODE": "core",
       "ENABLE_CONTINUOUS_LOOP": "true",
-      "LOOP_DELAY_SECONDS": "60",
-      "RUN_CHROMIUM": "true",
-      "RUN_FIREFOX": "false",
-      "RUN_WEBKIT": "false",
-      "RUN_MOBILE_CHROMIUM": "false",
-      "RUN_MOBILE_WEBKIT": "false"
+      "LOOP_DELAY_SECONDS": "60"
+    }
+  },
+  {
+    "job": "big_two_2of2",
+    "max_age_minutes": 180,
+    "max_runtime_minutes": 150,
+    "parameters": {
+      "PROVIDER_SCOPE": "big_two_2of2",
+      "FORM_SUITE": "all",
+      "SERVICE_MODE": "core",
+      "ENABLE_CONTINUOUS_LOOP": "true",
+      "LOOP_DELAY_SECONDS": "60"
+    }
+  },
+  {
+    "job": "rtk_megafon",
+    "max_age_minutes": 180,
+    "max_runtime_minutes": 150,
+    "parameters": {
+      "PROVIDER_SCOPE": "rtk_megafon",
+      "FORM_SUITE": "all",
+      "SERVICE_MODE": "core",
+      "ENABLE_CONTINUOUS_LOOP": "true",
+      "LOOP_DELAY_SECONDS": "60"
+    }
+  },
+  {
+    "job": "small_pool",
+    "max_age_minutes": 180,
+    "max_runtime_minutes": 150,
+    "parameters": {
+      "PROVIDER_SCOPE": "small_pool",
+      "FORM_SUITE": "all",
+      "SERVICE_MODE": "core",
+      "ENABLE_CONTINUOUS_LOOP": "true",
+      "LOOP_DELAY_SECONDS": "60"
     }
   }
 ]
