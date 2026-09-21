@@ -19,7 +19,10 @@ pipeline {
                         credentialsId: 'jenkins_watchdog_api',
                         usernameVariable: 'JENKINS_API_USER',
                         passwordVariable: 'JENKINS_API_TOKEN'
-                    )
+                    ),
+                    string(credentialsId: 'telegram_proxy_url', variable: 'TELEGRAM_PROXY_URL'),
+                    string(credentialsId: 'telegram_proxy_auth_secret', variable: 'TELEGRAM_PROXY_AUTH_SECRET'),
+                    string(credentialsId: 'telegram_proxy_global_test', variable: 'TELEGRAM_PROXY_CREDS')
                 ]) {
                     sh '''
                         set -eu

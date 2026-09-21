@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import html
 import json
 import os
 import sys
@@ -13,8 +14,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 
 @dataclass(frozen=True)
@@ -120,6 +123,57 @@ def trigger_job(
         return
 
 
+def format_notification(
+    running_jobs: list[str], queued_job_names: list[str], restarted_jobs: list[str], now: datetime
+) -> str:
+    jobs = []
+    jobs.extend(f"{job} (выполняется)" for job in running_jobs)
+    jobs.extend(f"{job} (в очереди)" for job in queued_job_names if job not in running_jobs)
+    jobs_text = ", ".join(jobs) if jobs else "нет"
+    recovery_text = ", ".join(restarted_jobs) if restarted_jobs else "нет"
+    return (
+        f"Дата: {now:%d.%m.%Y}\n"
+        f"Время: {now:%H:%M:%S}\n"
+        f"Джобы в работе: {jobs_text}\n"
+        f"Возобновлена работа: {recovery_text}"
+    )
+
+
+def send_notification(message: str) -> None:
+    proxy_url = os.environ.get("TELEGRAM_PROXY_URL", "").strip()
+    auth_secret = os.environ.get("TELEGRAM_PROXY_AUTH_SECRET", "").strip()
+    proxy_creds = os.environ.get("TELEGRAM_PROXY_CREDS", "").strip()
+    if not proxy_url or not auth_secret or not proxy_creds:
+        print("[WATCHDOG] notification skipped: Telegram proxy credentials are missing", file=sys.stderr)
+        return
+
+    request = urllib.request.Request(
+        proxy_url,
+        data=json.dumps(
+            {
+                "title": "Watchdog report",
+                "text": html.escape(message),
+                "creds": proxy_creds,
+                "parse_mode": "HTML",
+                "disable_notification": False,
+            }
+        ).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "X-Authentication": auth_secret,
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            if response.status >= 400:
+                print(f"[WATCHDOG] notification failed: HTTP {response.status}", file=sys.stderr)
+            else:
+                print("[WATCHDOG] notification sent")
+    except Exception as error:
+        print(f"[WATCHDOG] notification failed: {error}", file=sys.stderr)
+
+
 def decide_action(job_data: dict[str, Any], now_ms: int, target: Target) -> str:
     last_build = job_data.get("lastBuild") or {}
     if last_build.get("building"):
@@ -190,6 +244,7 @@ def main() -> int:
             print(f"[WATCHDOG] failed for {target.job}: {error}", file=sys.stderr)
 
     handled = set()
+    restarted_jobs: list[str] = []
     for group_name, group_targets in grouped.items():
         if any(target.job not in target_data for target in group_targets):
             continue
@@ -216,6 +271,7 @@ def main() -> int:
                     print(f"[WATCHDOG] group={group_name} trigger skipped: build became active or queued")
                     continue
                 trigger_job(base_url, recovery_target.job, username, token, recovery_target.parameters)
+                restarted_jobs.append(recovery_target.job)
                 print(f"[WATCHDOG] triggered {recovery_target.job}")
             except Exception as error:
                 exit_code = 1
@@ -240,12 +296,30 @@ def main() -> int:
                         print(f"[WATCHDOG] job={target.job} trigger skipped: build became active or queued")
                         continue
                     trigger_job(base_url, target.job, username, token, target.parameters)
+                    restarted_jobs.append(target.job)
                     print(f"[WATCHDOG] triggered {target.job}")
                 except Exception as error:
                     exit_code = 1
                     print(f"[WATCHDOG] failed to trigger {target.job}: {error}", file=sys.stderr)
         elif action == "running-too-long":
             print(f"[WATCHDOG] alert: {target.job} is running longer than allowed", file=sys.stderr)
+
+    running_jobs = [
+        target.job
+        for target in targets
+        if (target_data.get(target.job, {}).get("lastBuild") or {}).get("building")
+    ]
+    queued_job_names = [
+        target.job
+        for target in targets
+        if target.job in target_data and is_queued(target.job, queued, base_url)
+    ]
+    timezone_name = os.environ.get("TZ", "Europe/Moscow").strip() or "Europe/Moscow"
+    try:
+        now_local = datetime.now(ZoneInfo(timezone_name))
+    except Exception:
+        now_local = datetime.now(ZoneInfo("Europe/Moscow"))
+    send_notification(format_notification(running_jobs, queued_job_names, restarted_jobs, now_local))
     return exit_code
 
 

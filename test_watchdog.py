@@ -1,6 +1,7 @@
 import unittest
+from datetime import datetime
 
-from watchdog import Target, decide_action, select_group_recovery_target
+from watchdog import Target, decide_action, format_notification, select_group_recovery_target
 
 
 class WatchdogDecisionTests(unittest.TestCase):
@@ -68,6 +69,19 @@ class WatchdogDecisionTests(unittest.TestCase):
             "two": {"lastCompletedBuild": {"timestamp": self.now - 100 * 60_000}},
         }
         self.assertEqual(select_group_recovery_target(targets, data, set(), "https://jenkins.example", self.now).job, "one")
+
+    def test_notification_contains_status_and_recovery(self):
+        message = format_notification(
+            ["rtk_megafon"],
+            ["code_checker_dev"],
+            ["big_two_1of2"],
+            datetime(2026, 9, 21, 6, 0, 0),
+        )
+        self.assertIn("Дата: 21.09.2026", message)
+        self.assertIn("Время: 06:00:00", message)
+        self.assertIn("rtk_megafon (выполняется)", message)
+        self.assertIn("code_checker_dev (в очереди)", message)
+        self.assertIn("Возобновлена работа: big_two_1of2", message)
 
 
 if __name__ == "__main__":
