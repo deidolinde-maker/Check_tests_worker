@@ -75,6 +75,24 @@ def request_crumb(base_url: str, username: str, token: str) -> tuple[str, str] |
     return str(data["crumbRequestField"]), str(data["crumb"])
 
 
+def queued_jobs(base_url: str, username: str, token: str) -> set[str]:
+    data = request_json(f"{base_url.rstrip('/')}/queue/api/json", username, token)
+    jobs = set()
+    for item in data.get("items", []):
+        task = item.get("task") or {}
+        task_name = task.get("name")
+        task_url = (task.get("url") or "").rstrip("/")
+        if task_name:
+            jobs.add(str(task_name))
+        if task_url:
+            jobs.add(task_url)
+    return jobs
+
+
+def is_queued(job_name: str, queued: set[str], base_url: str) -> bool:
+    return job_name in queued or f"{base_url.rstrip('/')}/{job_path(job_name)}" in queued
+
+
 def trigger_job(
     base_url: str,
     job_name: str,
@@ -113,10 +131,14 @@ def decide_action(job_data: dict[str, Any], now_ms: int, target: Target) -> str:
 
 
 def select_group_recovery_target(
-    targets: list[Target], data_by_job: dict[str, dict[str, Any]], now_ms: int
+    targets: list[Target], data_by_job: dict[str, dict[str, Any]], queued: set[str], base_url: str, now_ms: int
 ) -> Target | None:
     """Return only the first chain target when the whole group is idle."""
-    if any((data_by_job[target.job].get("lastBuild") or {}).get("building") for target in targets):
+    if any(
+        (data_by_job[target.job].get("lastBuild") or {}).get("building")
+        or is_queued(target.job, queued, base_url)
+        for target in targets
+    ):
         return None
     return targets[0]
 
@@ -137,6 +159,12 @@ def main() -> int:
     exit_code = 0
     now_ms = int(time.time() * 1000)
     targets = load_targets(args.targets)
+    try:
+        queued = queued_jobs(base_url, username, token)
+        print(f"[WATCHDOG] queued jobs: {len(queued)}")
+    except Exception as error:
+        print(f"[WATCHDOG] failed to read Jenkins queue: {error}", file=sys.stderr)
+        return 1
     grouped: dict[str, list[Target]] = {}
     for target in targets:
         if target.group:
@@ -159,9 +187,9 @@ def main() -> int:
         if running:
             print(f"[WATCHDOG] group={group_name} healthy: active={', '.join(running)}")
             continue
-        recovery_target = select_group_recovery_target(group_targets, target_data, now_ms)
+        recovery_target = select_group_recovery_target(group_targets, target_data, queued, base_url, now_ms)
         if recovery_target is None:
-            print(f"[WATCHDOG] group={group_name} healthy: no active build, last completion is recent")
+            print(f"[WATCHDOG] group={group_name} healthy: active or queued build exists")
             continue
         print(f"[WATCHDOG] group={group_name} action=trigger job={recovery_target.job}")
         if args.dry_run:
@@ -176,6 +204,9 @@ def main() -> int:
 
     for target in targets:
         if target.job in handled or target.job not in target_data:
+            continue
+        if is_queued(target.job, queued, base_url):
+            print(f"[WATCHDOG] job={target.job} action=queued")
             continue
         action = decide_action(target_data[target.job], now_ms, target)
         print(f"[WATCHDOG] job={target.job} action={action}")

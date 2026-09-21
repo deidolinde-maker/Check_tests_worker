@@ -33,7 +33,19 @@ class WatchdogDecisionTests(unittest.TestCase):
             "one": {"lastBuild": {"building": True, "timestamp": self.now - 5 * 60_000}},
             "two": {"lastCompletedBuild": {"timestamp": self.now - 90 * 60_000}},
         }
-        self.assertIsNone(select_group_recovery_target(targets, data, self.now))
+        self.assertIsNone(select_group_recovery_target(targets, data, set(), "https://jenkins.example", self.now))
+
+    def test_group_with_one_queued_job_does_not_start_another(self):
+        targets = [
+            Target("one", 20, 30, {}, "chain"),
+            Target("two", 20, 30, {}, "chain"),
+        ]
+        data = {
+            "one": {"lastCompletedBuild": {"timestamp": self.now - 90 * 60_000}},
+            "two": {"lastCompletedBuild": {"timestamp": self.now - 90 * 60_000}},
+        }
+        queued = {"one"}
+        self.assertIsNone(select_group_recovery_target(targets, data, queued, "https://jenkins.example", self.now))
 
     def test_group_recovers_only_first_job(self):
         targets = [
@@ -44,7 +56,7 @@ class WatchdogDecisionTests(unittest.TestCase):
             "one": {"lastCompletedBuild": {"timestamp": self.now - 90 * 60_000}},
             "two": {"lastCompletedBuild": {"timestamp": self.now - 100 * 60_000}},
         }
-        self.assertEqual(select_group_recovery_target(targets, data, self.now).job, "one")
+        self.assertEqual(select_group_recovery_target(targets, data, set(), "https://jenkins.example", self.now).job, "one")
 
 
 if __name__ == "__main__":
