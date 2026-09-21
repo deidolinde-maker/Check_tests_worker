@@ -139,6 +139,11 @@ def format_notification(
     )
 
 
+def should_notify(running_jobs: list[str], queued_job_names: list[str], restarted_jobs: list[str]) -> bool:
+    """Notify only for recovery or when no monitored job is alive."""
+    return bool(restarted_jobs) or not running_jobs and not queued_job_names
+
+
 def send_notification(message: str) -> None:
     proxy_url = os.environ.get("TELEGRAM_PROXY_URL", "").strip()
     auth_secret = os.environ.get("TELEGRAM_PROXY_AUTH_SECRET", "").strip()
@@ -312,14 +317,18 @@ def main() -> int:
     queued_job_names = [
         target.job
         for target in targets
-        if target.job in target_data and is_queued(target.job, queued, base_url)
+        if target.job in target_data
+        and (bool(target_data[target.job].get("inQueue")) or is_queued(target.job, queued, base_url))
     ]
     timezone_name = os.environ.get("TZ", "Europe/Moscow").strip() or "Europe/Moscow"
     try:
         now_local = datetime.now(ZoneInfo(timezone_name))
     except Exception:
         now_local = datetime.now(ZoneInfo("Europe/Moscow"))
-    send_notification(format_notification(running_jobs, queued_job_names, restarted_jobs, now_local))
+    if should_notify(running_jobs, queued_job_names, restarted_jobs):
+        send_notification(format_notification(running_jobs, queued_job_names, restarted_jobs, now_local))
+    else:
+        print("[WATCHDOG] notification skipped: monitored jobs are healthy")
     return exit_code
 
 

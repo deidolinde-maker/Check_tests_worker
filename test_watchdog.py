@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime
 
-from watchdog import Target, decide_action, format_notification, select_group_recovery_target
+from watchdog import Target, decide_action, format_notification, select_group_recovery_target, should_notify
 
 
 class WatchdogDecisionTests(unittest.TestCase):
@@ -82,6 +82,15 @@ class WatchdogDecisionTests(unittest.TestCase):
         self.assertIn("rtk_megafon (выполняется)", message)
         self.assertIn("code_checker_dev (в очереди)", message)
         self.assertIn("Возобновлена работа: big_two_1of2", message)
+
+    def test_healthy_state_does_not_notify(self):
+        self.assertFalse(should_notify(["code_checker_dev"], ["small_pool"], []))
+
+    def test_recovery_state_notifies(self):
+        self.assertTrue(should_notify(["big_two_1of2"], [], ["code_checker_dev"]))
+
+    def test_empty_state_notifies(self):
+        self.assertTrue(should_notify([], [], []))
 
 
 if __name__ == "__main__":
